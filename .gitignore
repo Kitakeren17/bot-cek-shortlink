@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+wa_session/
+screenshots/
+topic_ids.json
+.env
