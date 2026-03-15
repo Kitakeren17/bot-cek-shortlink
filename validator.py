@@ -11,6 +11,7 @@ import re
 import logging
 import os
 import time
+import uuid
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from config import REDIRECT_TIMEOUT, SCREENSHOT_ENABLED, USE_PROXY, PROXY_URL
@@ -38,9 +39,9 @@ def detect_whatsapp(url: str, page_content: str = "") -> dict:
         if match:
             # Coba ekstrak nomor WA
             wa_number = ""
-            num_match = re.search(r"wa\.me/(\d+)", combined)
+            num_match = re.search(r"wa\.me/\+?(\d+)", combined)
             if not num_match:
-                num_match = re.search(r"api\.whatsapp\.com/send\?phone=(\d+)", combined)
+                num_match = re.search(r"api\.whatsapp\.com/send\?phone=\+?(\d+)", combined)
             if num_match:
                 wa_number = num_match.group(1)
 
@@ -69,13 +70,19 @@ async def check_wa_active(wa_number: str) -> dict:
     logger.info(f"  Cek WA aktif: {wa_url}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        try:
+            browser = await p.chromium.launch(
+                headless=True, channel="msedge",
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+        except Exception:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
             viewport={"width": 1366, "height": 768},
         )
         page = await context.new_page()
@@ -163,10 +170,15 @@ async def validate_link(url: str, index: int) -> dict:
         if proxy_config:
             launch_args["proxy"] = proxy_config
 
-        browser = await p.chromium.launch(**launch_args)
+        try:
+            launch_args["channel"] = "msedge"
+            browser = await p.chromium.launch(**launch_args)
+        except Exception:
+            launch_args.pop("channel", None)
+            browser = await p.chromium.launch(**launch_args)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
             viewport={"width": 1366, "height": 768},
         )
         page = await context.new_page()
@@ -227,7 +239,7 @@ async def validate_link(url: str, index: int) -> dict:
             if SCREENSHOT_ENABLED:
                 try:
                     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-                    ss_path = os.path.join(SCREENSHOT_DIR, f"link_{index}.png")
+                    ss_path = os.path.join(SCREENSHOT_DIR, f"link_{index}_{uuid.uuid4().hex[:8]}.png")
                     await page.screenshot(path=ss_path, full_page=False)
                     result["screenshot_path"] = ss_path
                 except Exception as e:

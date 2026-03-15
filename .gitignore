@@ -4,3 +4,5 @@ wa_session/
 screenshots/
 topic_ids.json
 .env
+build/
+dist/

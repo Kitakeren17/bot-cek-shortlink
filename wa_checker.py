@@ -6,6 +6,8 @@ Login ke WhatsApp Web via Playwright dan cek apakah nomor terdaftar.
 import asyncio
 import logging
 import os
+import time as _time
+from collections import OrderedDict
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,11 @@ _context: BrowserContext | None = None
 _page: Page | None = None
 _playwright = None
 _logged_in: bool = False
-_checked_numbers: dict[str, dict] = {}  # Cache hasil cek per nomor
+
+# Cache hasil cek per nomor (LRU dengan batas ukuran dan TTL)
+_MAX_CACHE_SIZE = 500
+_CACHE_TTL = 3600  # 1 jam
+_checked_numbers: OrderedDict[str, dict] = OrderedDict()
 
 
 async def _ensure_browser():
@@ -32,16 +38,32 @@ async def _ensure_browser():
     os.makedirs(WA_SESSION_DIR, exist_ok=True)
 
     _playwright = await async_playwright().start()
-    _context = await _playwright.chromium.launch_persistent_context(
-        user_data_dir=WA_SESSION_DIR,
-        headless=False,
-        channel="msedge",
-        args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled",
-              "--no-first-run"],
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
-        viewport={"width": 1366, "height": 768},
-    )
+
+    # Pakai Edge kalau ada, fallback ke Chromium bawaan Playwright
+    launch_args = {
+        "user_data_dir": WA_SESSION_DIR,
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled",
+                 "--no-first-run"],
+        "viewport": {"width": 1366, "height": 768},
+    }
+
+    try:
+        launch_args["channel"] = "msedge"
+        launch_args["user_agent"] = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+        )
+        _context = await _playwright.chromium.launch_persistent_context(**launch_args)
+        logger.info("WhatsApp Web: menggunakan Microsoft Edge")
+    except Exception:
+        launch_args.pop("channel", None)
+        launch_args["user_agent"] = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        _context = await _playwright.chromium.launch_persistent_context(**launch_args)
+        logger.info("WhatsApp Web: menggunakan Chromium (Edge tidak tersedia)")
     _browser = _context
     _page = _context.pages[0] if _context.pages else await _context.new_page()
 
@@ -56,12 +78,31 @@ def is_logged_in() -> bool:
 
 def get_cached_result(number: str) -> dict | None:
     """Ambil hasil cek dari cache (supaya nomor sama tidak dicek ulang)."""
-    return _checked_numbers.get(number)
+    entry = _checked_numbers.get(number)
+    if entry is None:
+        return None
+    # Cek TTL — hapus kalau sudah expired
+    if _time.time() - entry.get("_cached_at", 0) > _CACHE_TTL:
+        _checked_numbers.pop(number, None)
+        return None
+    # Pindah ke akhir (LRU)
+    _checked_numbers.move_to_end(number)
+    return entry
 
 
 def clear_cache():
     """Bersihkan cache hasil cek."""
     _checked_numbers.clear()
+
+
+def _add_to_cache(number: str, result: dict):
+    """Tambah ke cache dengan LRU eviction dan TTL."""
+    result["_cached_at"] = _time.time()
+    _checked_numbers[number] = result
+    _checked_numbers.move_to_end(number)
+    # Evict entri terlama kalau melebihi batas
+    while len(_checked_numbers) > _MAX_CACHE_SIZE:
+        _checked_numbers.popitem(last=False)
 
 
 async def auto_restore_session():
@@ -405,8 +446,8 @@ async def check_number(number: str) -> dict:
     except Exception as e:
         result["status"] = f"Error: {str(e)[:100]}"
 
-    # Simpan ke cache
-    _checked_numbers[number] = result
+    # Simpan ke cache (LRU dengan TTL)
+    _add_to_cache(number, result)
     logger.info(f"  WA +{number}: {result['status']}")
     return result
 

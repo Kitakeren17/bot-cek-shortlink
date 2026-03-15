@@ -10,6 +10,7 @@ Cara pakai:
 """
 
 import asyncio
+import sys
 import logging
 from telegram import Update
 from telegram.ext import (
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Track task yang sedang berjalan per chat (untuk /stop)
 active_tasks: dict[str, asyncio.Task] = {}
+_tasks_lock = asyncio.Lock()
 
 # Cache topic ID "REQUEST CEK"
 _request_topic_cache: dict[str, int] = {}
@@ -200,7 +202,7 @@ async def cmd_cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     source_url = context.args[0]
 
-    # Validasi URL sederhana
+    # Validasi URL
     if not source_url.startswith(("http://", "https://")):
         await update.message.reply_text(
             "URL harus diawali `http://` atau `https://`",
@@ -208,40 +210,53 @@ async def cmd_cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Cek apakah sudah ada proses berjalan
-    if chat_id in active_tasks and not active_tasks[chat_id].done():
+    # Validasi domain — harus punya domain yang valid
+    from urllib.parse import urlparse
+    parsed = urlparse(source_url)
+    if not parsed.netloc or "." not in parsed.netloc:
         await update.message.reply_text(
-            "Masih ada proses berjalan. Kirim /stop dulu untuk membatalkan."
+            "URL tidak valid. Contoh: `https://linktr.ee/contoh`",
+            parse_mode="Markdown"
         )
         return
 
-    # Jalankan pipeline sebagai async task
-    bot = context.bot
-    thread_id = get_thread_id(update)
+    # Cek apakah sudah ada proses berjalan (dengan lock untuk hindari race condition)
+    async with _tasks_lock:
+        if chat_id in active_tasks and not active_tasks[chat_id].done():
+            await update.message.reply_text(
+                "Masih ada proses berjalan. Kirim /stop dulu untuk membatalkan."
+            )
+            return
 
-    async def run():
-        try:
-            await run_pipeline(bot, chat_id, source_url, thread_id=thread_id)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            active_tasks.pop(chat_id, None)
+        # Jalankan pipeline sebagai async task
+        bot = context.bot
+        thread_id = get_thread_id(update)
 
-    task = asyncio.create_task(run())
-    active_tasks[chat_id] = task
+        async def run():
+            try:
+                await run_pipeline(bot, chat_id, source_url, thread_id=thread_id)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                async with _tasks_lock:
+                    active_tasks.pop(chat_id, None)
+
+        task = asyncio.create_task(run())
+        active_tasks[chat_id] = task
 
 
 # ── HANDLER: /stop ───────────────────────────────────────
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
-    task = active_tasks.get(chat_id)
 
-    if task and not task.done():
-        task.cancel()
-        active_tasks.pop(chat_id, None)
-        await update.message.reply_text("Proses dibatalkan.")
-    else:
-        await update.message.reply_text("Tidak ada proses yang sedang berjalan.")
+    async with _tasks_lock:
+        task = active_tasks.get(chat_id)
+        if task and not task.done():
+            task.cancel()
+            active_tasks.pop(chat_id, None)
+            await update.message.reply_text("Proses dibatalkan.")
+        else:
+            await update.message.reply_text("Tidak ada proses yang sedang berjalan.")
 
 
 # ── HANDLER: Pesan biasa (URL tanpa command) ─────────────
@@ -264,7 +279,7 @@ def main():
     if not BOT_TOKEN:
         print("ERROR: Set environment variable BOT_TOKEN terlebih dahulu!")
         print("Contoh: export BOT_TOKEN='123456:ABC-DEF...'")
-        return
+        sys.exit(1)
 
     app = Application.builder().token(BOT_TOKEN).build()
 

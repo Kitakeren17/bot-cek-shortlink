@@ -104,9 +104,14 @@ async def scrape_links(url: str) -> dict:
         if proxy_config:
             launch_args["proxy"] = proxy_config
 
-        browser = await p.chromium.launch(**launch_args)
+        try:
+            launch_args["channel"] = "msedge"
+            browser = await p.chromium.launch(**launch_args)
+        except Exception:
+            launch_args.pop("channel", None)
+            browser = await p.chromium.launch(**launch_args)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
             viewport={"width": 1366, "height": 768},
             locale="id-ID",
             timezone_id="Asia/Jakarta"
@@ -181,9 +186,9 @@ async def scrape_links(url: str) -> dict:
 
         # Cari pola wa.me/NOMOR atau phone=NOMOR di seluruh HTML
         import re
-        wa_patterns_in_page = re.findall(r'wa\.me/(\d{10,15})', page_content)
-        wa_patterns_in_page += re.findall(r'phone=(\d{10,15})', page_content)
-        wa_patterns_in_page += re.findall(r'whatsapp\.com/send\?.*?phone=(\d{10,15})', page_content)
+        wa_patterns_in_page = re.findall(r'wa\.me/\+?(\d{7,15})', page_content)
+        wa_patterns_in_page += re.findall(r'phone=\+?(\d{7,15})', page_content)
+        wa_patterns_in_page += re.findall(r'whatsapp\.com/send\?.*?phone=\+?(\d{7,15})', page_content)
 
         # Tambahkan ke raw_links kalau belum ada
         existing_hrefs = {item.get("href", "") for item in raw_links}

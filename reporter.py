@@ -11,6 +11,9 @@ from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
 
+# Batas karakter pesan Telegram
+_TG_MAX_LENGTH = 4096
+
 # File untuk simpan topic ID secara permanen
 _TOPIC_FILE = os.path.join(os.path.dirname(__file__), "topic_ids.json")
 
@@ -50,8 +53,19 @@ async def get_or_create_topic(bot: Bot, chat_id: str, topic_name: str) -> int | 
 
     cache_key = f"{chat_id}:{topic_name}"
     if cache_key in _topic_cache:
-        # Verifikasi topik masih valid dengan coba kirim test
-        return _topic_cache[cache_key]
+        # Verifikasi topik masih valid dengan coba kirim pesan kosong
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=".",
+                message_thread_id=_topic_cache[cache_key]
+            )
+            return _topic_cache[cache_key]
+        except TelegramError:
+            # Topic mungkin sudah dihapus, hapus dari cache dan buat baru
+            logger.warning(f"Topic '{topic_name}' tidak valid lagi, buat baru...")
+            del _topic_cache[cache_key]
+            _save_topic_cache()
 
     try:
         result = await bot.create_forum_topic(
@@ -66,6 +80,36 @@ async def get_or_create_topic(bot: Bot, chat_id: str, topic_name: str) -> int | 
     except TelegramError as e:
         logger.warning(f"Gagal buat topik '{topic_name}': {e}")
         return None
+
+
+async def _send_long_message(bot: Bot, chat_id: str, text: str,
+                              parse_mode: str = "Markdown", message_thread_id: int = None):
+    """Kirim pesan panjang dengan otomatis split jika melebihi batas Telegram."""
+    if len(text) <= _TG_MAX_LENGTH:
+        await bot.send_message(
+            chat_id=chat_id, text=text,
+            parse_mode=parse_mode, message_thread_id=message_thread_id
+        )
+        return
+
+    # Split per baris, kirim dalam beberapa pesan
+    lines = text.split("\n")
+    chunk = ""
+    for line in lines:
+        if len(chunk) + len(line) + 1 > _TG_MAX_LENGTH - 50:  # sisakan margin
+            if chunk:
+                await bot.send_message(
+                    chat_id=chat_id, text=chunk,
+                    parse_mode=parse_mode, message_thread_id=message_thread_id
+                )
+            chunk = line
+        else:
+            chunk = f"{chunk}\n{line}" if chunk else line
+    if chunk:
+        await bot.send_message(
+            chat_id=chat_id, text=chunk,
+            parse_mode=parse_mode, message_thread_id=message_thread_id
+        )
 
 
 def format_link_result(result: dict, total: int) -> str:
@@ -290,11 +334,9 @@ async def send_summary(bot: Bot, chat_id: str, source_url: str,
 
     lines.append(f"\n⏱ Total waktu: *{time_str}*")
 
-    await bot.send_message(
-        chat_id=chat_id,
-        text="\n".join(lines),
-        parse_mode="Markdown",
-        message_thread_id=thread_id
+    await _send_long_message(
+        bot, chat_id, "\n".join(lines),
+        parse_mode="Markdown", message_thread_id=thread_id
     )
 
 
@@ -373,11 +415,9 @@ async def send_rangkuman_perlink(bot: Bot, chat_id: str, source_url: str,
         lines.append(f"  📱 WA: {wa_aktif}✅ {wa_blok}❌ / {len(wa_results)} total")
 
     try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text="\n".join(lines),
-            parse_mode="Markdown",
-            message_thread_id=topic_thread_id
+        await _send_long_message(
+            bot, chat_id, "\n".join(lines),
+            parse_mode="Markdown", message_thread_id=topic_thread_id
         )
     except Exception as e:
         logger.warning(f"Gagal kirim rangkuman perlink: {e}")

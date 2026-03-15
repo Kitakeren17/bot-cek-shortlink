@@ -11,7 +11,7 @@ from telegram.error import ChatMigrated
 from scraper import scrape_links
 from validator import validate_link
 from reporter import send_link_result, send_summary
-from config import DELAY_BETWEEN_CHECKS
+from config import DELAY_BETWEEN_CHECKS, SKIP_DOMAINS
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +77,6 @@ async def run_pipeline(bot: Bot, chat_id: str, source_url: str, thread_id: int =
         # ── LANGKAH 2: PISAHKAN LINK BIASA DAN LINK WA ────────────
         import re
         WA_DOMAINS = ["wa.me", "whatsapp.com", "wa.link"]
-        SKIP_DOMAINS = [
-            "youtube.com", "youtu.be",
-            "instagram.com",
-            "facebook.com", "fb.com", "fb.me",
-            "microsoft.com", "getmicrosoft.com",
-            "metacareers.com", "meta.com",
-            "twitter.com", "x.com",
-            "tiktok.com",
-            "linkedin.com",
-            "t.me",
-        ]
 
         normal_links = []
         wa_numbers = set()
@@ -102,10 +91,10 @@ async def run_pipeline(bot: Bot, chat_id: str, source_url: str, thread_id: int =
             is_wa = any(domain in url for domain in WA_DOMAINS)
 
             if is_wa:
-                # Ekstrak nomor WA
-                num_match = re.search(r'wa\.me/(\d+)', url)
+                # Ekstrak nomor WA (handle + prefix dan variasi format)
+                num_match = re.search(r'wa\.me/\+?(\d+)', url)
                 if not num_match:
-                    num_match = re.search(r'phone=(\d+)', url)
+                    num_match = re.search(r'phone=\+?(\d+)', url)
                 if num_match:
                     wa_numbers.add(num_match.group(1))
             else:
@@ -131,9 +120,9 @@ async def run_pipeline(bot: Bot, chat_id: str, source_url: str, thread_id: int =
             # Cek apakah final URL redirect ke WhatsApp
             final_url = result.get("final_url", "").lower()
             if any(domain in final_url for domain in WA_DOMAINS):
-                num_match = re.search(r'phone=(\d{10,15})', final_url)
+                num_match = re.search(r'phone=\+?(\d{7,15})', final_url)
                 if not num_match:
-                    num_match = re.search(r'wa\.me/(\d{10,15})', final_url)
+                    num_match = re.search(r'wa\.me/\+?(\d{7,15})', final_url)
                 if num_match and num_match.group(1) not in wa_numbers:
                     wa_numbers.add(num_match.group(1))
                     logger.info(f"📱 Nomor WA ditemukan dari redirect: {num_match.group(1)}")
