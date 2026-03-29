@@ -212,9 +212,15 @@ async def scrape_links(url: str) -> dict:
     for item in raw_links:
         href = item.get("href", "").strip()
 
-        # Abaikan link ke halaman yang sama (domain sama)
-        if urlparse(href).netloc == urlparse(url).netloc:
-            continue
+        # Abaikan link ke halaman yang PERSIS sama (URL sama)
+        # Tapi JANGAN abaikan link redirect internal (domain sama, path beda)
+        # karena platform seperti linklist.bio pakai redirect internal
+        href_parsed = urlparse(href)
+        url_parsed = urlparse(url)
+        if href_parsed.netloc == url_parsed.netloc:
+            # Hanya skip kalau path-nya juga sama (link ke diri sendiri)
+            if href_parsed.path.rstrip("/") == url_parsed.path.rstrip("/"):
+                continue
 
         if not is_valid_destination_link(href, url):
             continue

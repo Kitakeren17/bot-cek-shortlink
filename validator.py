@@ -27,7 +27,8 @@ WA_PATTERNS = [
     r"wa\.link/",
 ]
 
-SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
+from config import BASE_DIR
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 
 def detect_whatsapp(url: str, page_content: str = "") -> dict:

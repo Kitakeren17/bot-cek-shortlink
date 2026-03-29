@@ -6,3 +6,7 @@ topic_ids.json
 .env
 build/
 dist/
+dist_portable/
+dist_single_exe/
+dist_single_exe.zip
+RUN BOT.bat

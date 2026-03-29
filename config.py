@@ -4,6 +4,23 @@ Semua setting diambil dari environment variable atau pakai default.
 """
 
 import os
+import sys
+
+
+def get_base_dir() -> str:
+    """Dapatkan base directory (untuk PyInstaller bundled atau script biasa)."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_DIR = get_base_dir()
+
+# ── PLAYWRIGHT BROWSER PATH ────────────────────────────
+# Kalau ada folder browsers/ di sebelah exe, pakai itu
+_bundled_browsers = os.path.join(BASE_DIR, "browsers")
+if os.path.isdir(_bundled_browsers):
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _bundled_browsers)
 
 # ── TELEGRAM ─────────────────────────────────────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -20,6 +37,10 @@ PROXY_URL = os.getenv("PROXY_URL", "")
 # ── VALIDATOR ────────────────────────────────────────────
 REDIRECT_TIMEOUT = int(os.getenv("REDIRECT_TIMEOUT", "20"))
 SCREENSHOT_ENABLED = os.getenv("SCREENSHOT_ENABLED", "true").lower() == "true"
+
+# ── AUTO-UPDATE (GitHub Releases) ────────────────────────
+# Format: "username/nama-repo" — contoh: "tenzo123/bot-cek-shortlink"
+GITHUB_REPO = os.getenv("GITHUB_REPO", "Kitakeren17/bot-cek-shortlink")
 
 # ── PIPELINE ─────────────────────────────────────────────
 DELAY_BETWEEN_CHECKS = float(os.getenv("DELAY_BETWEEN_CHECKS", "2.0"))

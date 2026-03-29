@@ -12,8 +12,9 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
 
-WA_SESSION_DIR = os.path.join(os.path.dirname(__file__), "wa_session")
-SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
+from config import BASE_DIR
+WA_SESSION_DIR = os.path.join(BASE_DIR, "wa_session")
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "screenshots")
 
 # Singleton state
 _browser: Browser | None = None

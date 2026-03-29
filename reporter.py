@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 _TG_MAX_LENGTH = 4096
 
 # File untuk simpan topic ID secara permanen
-_TOPIC_FILE = os.path.join(os.path.dirname(__file__), "topic_ids.json")
+from config import BASE_DIR
+_TOPIC_FILE = os.path.join(BASE_DIR, "topic_ids.json")
 
 # Cache topic ID (di-load dari file saat pertama kali)
 _topic_cache: dict[str, int] = {}

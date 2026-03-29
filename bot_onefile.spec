@@ -47,12 +47,13 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-# Mode FOLDER (bukan single file) supaya browser bisa di-bundle
+# Mode SINGLE FILE — pakai Edge yang sudah ada di Windows
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='BotCekShortlink',
     debug=False,
     bootloader_ignore_signals=False,
@@ -60,14 +61,4 @@ exe = EXE(
     upx=True,
     console=True,
     icon=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='BotCekShortlink',
 )
